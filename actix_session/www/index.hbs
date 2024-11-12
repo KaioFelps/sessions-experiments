@@ -8,12 +8,21 @@
 </head>
 <body>
     <main class="main-container">
+        {{#if flash}}
+            <span class="flash-message">{{flash}}</span>
+        {{/if}}
+        {{#if errors}}
+            <span class="flash-message danger">{{errors.name}}</span>
+        {{/if}}
+
         <h1>Home</h1>
         <a href="/foo">Foo</a>
         <br>
         <a href="/redirect">Foo via redirect</a>
         <br>
         <a href="/redirect/forward">Foo via redirect com forward</a>
+        <br><br>
+        <a href="/backwitherrors">Catch an error!</a>
     </main>
 </body>
 </html>

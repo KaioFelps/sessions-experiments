@@ -11,9 +11,17 @@
         {{#if flash}}
             <span class="flash-message">{{flash}}</span>
         {{/if}}
+
+        {{#if errors.name}}
+            <span class="flash-message danger">{{errors.name}}</span>
+        {{/if}}
+        
         <p>
             Nothing much here..
         </p>
+
+        <a href="/">Go back home!</a><br>
+        <a href="/backwitherrors">Or pick a misterious error...</a>
     </main>
 </body>
 </html>

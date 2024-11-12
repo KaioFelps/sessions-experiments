@@ -1,3 +1,5 @@
+use once_session::{OnceSession, OnceSessionExt};
+use std::collections::HashMap;
 use std::io;
 use actix_session::{Session, SessionMiddleware};
 use actix_web::{get, App, HttpResponse, HttpServer, Responder};
@@ -7,7 +9,6 @@ use actix_web::dev::ServiceResponse;
 use actix_web::http::{header::ContentType, StatusCode};
 use actix_web::middleware::{ErrorHandlerResponse, ErrorHandlers};
 use actix_web::web::{self, Data, Html, Redirect};
-use flash::{Flash, OnceSession};
 use handlebars::{DirectorySourceOptions, Handlebars};
 use once_sessions_middleware::FlushOnceSessions;
 use serde_json::json;
@@ -15,18 +16,27 @@ use stateful_session::StatefulSessions;
 
 mod stateful_session;
 mod once_sessions_middleware;
-mod flash;
+mod once_session;
 
 type HBS<'a> = Data<Handlebars<'a>>;
 
+#[get("/backwitherrors")]
+async fn back_with_errors(session: Session, once_session: OnceSession) -> impl Responder {
+    if let Err(err) = session.insert_errors(json!({"name": "Your name is too ugly!".to_string()})) {
+        eprintln!("{}", err);
+    };
+    
+    return Redirect::to(once_session.prev_req).using_status_code(StatusCode::SEE_OTHER);
+}
+
 #[get("/foo")]
 async fn foo(hb: HBS<'_>, session: OnceSession) -> impl Responder {
-    let flash = match session.flash {
-        None => None,
-        Some(flash) => Some(serde_json::from_str::<String>(&flash).unwrap())
-    };
+    let mapped_session = session
+        .map::<String, Option<HashMap<String, String>>>()
+        .unwrap();
+
     return hb
-        .render("foo", &json!({"flash": flash}))
+        .render("foo", &mapped_session)
         .map(Html::new)
         .unwrap();
 }
@@ -50,10 +60,16 @@ async fn redirect(session: Session) -> impl Responder {
 }
 
 #[get("/")]
-async fn index(hb: HBS<'_>) -> impl Responder {
+async fn index(hb: HBS<'_>, once_session: OnceSession) -> impl Responder {
+    let sessions = once_session
+        .map::<String, HashMap<String, String>>()
+        .unwrap();
+
     return hb
         .render("index", &json!({
-            "title": "Home!"
+            "title": "Home!",
+            "errors": sessions.errors,
+            "flash": sessions.flash
         }))
         .map(Html::new)
         .unwrap();
@@ -63,11 +79,9 @@ async fn index(hb: HBS<'_>) -> impl Responder {
 async fn main() -> io::Result<()> {
     let mut handlebars = Handlebars::new();
     handlebars
-        .register_templates_directory(
-            "./www",
-            DirectorySourceOptions::default(),
-        )
+        .register_templates_directory("./www", DirectorySourceOptions::default())
         .unwrap();
+
     let handlebars_ref = web::Data::new(handlebars);
 
     let secret = Key::generate();
@@ -83,6 +97,7 @@ async fn main() -> io::Result<()> {
             .service(redirect)
             .service(redirect_to_forward)
             .service(forward_session)
+            .service(back_with_errors)
             .service(actix_files::Files::new("/", "./public/").prefer_utf8(true))
     })
     .workers(2)
@@ -105,9 +120,6 @@ fn not_found<B>(res: ServiceResponse<B>) -> actix_web::Result<ErrorHandlerRespon
 
 fn get_error_response<B>(res: &ServiceResponse<B>, error: &str) -> HttpResponse<BoxBody> {
     let request = res.request();
-
-    // Provide a fallback to a simple plain text response in case an error occurs during the
-    // rendering of the error page.
     let fallback = |err: &str| {
         HttpResponse::build(res.status())
             .content_type(ContentType::plaintext())

@@ -4,7 +4,7 @@ use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Tr
 use actix_web::Error;
 use actix_web::HttpMessage;
 use futures_util::future::LocalBoxFuture;
-use crate::flash::Flash;
+use crate::once_session::OnceSessionExt;
 
 // There are two steps in middleware processing.
 // 1. Middleware initialization, middleware factory gets called with
@@ -50,6 +50,10 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let session = req.get_session();
+        if let Err(err) = session.current_url(&req) {
+            eprintln!("Failed to update session _prev_url: {}", err);
+        };
+        
         let once_session = session.flush_flash();
         req.extensions_mut().insert(once_session);
 
